@@ -1,0 +1,17 @@
+{
+  "name": "istanbul-ofke",
+  "version": "0.1.0",
+  "private": true,
+  "description": "İstanbul Öfke — Trafiği Mahvet Simülatörü (Core Feel web prototype)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.43.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2"
+  }
+}
