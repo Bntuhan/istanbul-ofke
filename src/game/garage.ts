@@ -73,7 +73,7 @@ export const VEHICLES: Record<string, VehicleDef> = {
   },
 };
 
-export type UpgradeKey = "ramPower" | "resistance" | "rechargeRate";
+export type UpgradeKey = "ramPower" | "resistance" | "rechargeRate" | "powerupDuration";
 
 export interface SaveState {
   coins: number;
@@ -82,9 +82,20 @@ export interface SaveState {
   unlockedVehicles: string[];
   unlockedLevels: number[];
   upgrades: Record<UpgradeKey, number>;
+  stats: {
+    maxCombo: number;
+    kills: Record<string, number>;
+  };
+  dailyQuest: {
+    date: string;
+    targetId: string;
+    required: number;
+    current: number;
+    rewarded: boolean;
+  };
 }
 
-const SAVE_KEY = "istanbulOfke_save_v3";
+const SAVE_KEY = "istanbulOfke_save_v4";
 
 const DEFAULT_STATE: SaveState = {
   coins: 0,
@@ -92,13 +103,16 @@ const DEFAULT_STATE: SaveState = {
   currentVehicle: "tofas",
   unlockedVehicles: ["tofas"],
   unlockedLevels: [1],
-  upgrades: { ramPower: 0, resistance: 0, rechargeRate: 0 },
+  upgrades: { ramPower: 0, resistance: 0, rechargeRate: 0, powerupDuration: 0 },
+  stats: { maxCombo: 0, kills: {} },
+  dailyQuest: { date: "", targetId: "cakarli", required: 5, current: 0, rewarded: false },
 };
 
 export interface VehicleStats extends VehicleDef {
   ramPowerBonus: number;
   resistBonus: number;
   rechargeBonus: number;
+  powerupBonus: number;
 }
 
 /** Garaj, para, araç kilidi ve yükseltmeler. */
@@ -107,7 +121,51 @@ export class GarageManager {
 
   constructor() {
     const saved = localStorage.getItem(SAVE_KEY);
-    this.state = saved ? { ...DEFAULT_STATE, ...JSON.parse(saved) } : { ...DEFAULT_STATE };
+    let parsed = saved ? JSON.parse(saved) : {};
+    this.state = { ...DEFAULT_STATE, ...parsed };
+    if (!this.state.stats) this.state.stats = { maxCombo: 0, kills: {} };
+    if (!this.state.upgrades.powerupDuration) this.state.upgrades.powerupDuration = 0;
+    if (!this.state.dailyQuest) this.state.dailyQuest = { ...DEFAULT_STATE.dailyQuest };
+    this.checkDailyQuest();
+  }
+
+  checkDailyQuest(): void {
+    const today = new Date().toISOString().split("T")[0];
+    if (this.state.dailyQuest.date !== today) {
+      const targets = ["cakarli", "makasci", "dolmus", "simit", "scooter", "minibus"];
+      const r = Math.floor(Math.random() * targets.length);
+      this.state.dailyQuest = {
+        date: today,
+        targetId: targets[r],
+        required: targets[r] === "simit" ? 10 : 5,
+        current: 0,
+        rewarded: false,
+      };
+      this.save();
+    }
+  }
+
+  updateStats(combo: number, kills: Record<string, number>): void {
+    if (combo > this.state.stats.maxCombo) {
+      this.state.stats.maxCombo = combo;
+    }
+    for (const [tid, count] of Object.entries(kills)) {
+      this.state.stats.kills[tid] = (this.state.stats.kills[tid] || 0) + count;
+      if (this.state.dailyQuest.targetId === tid && !this.state.dailyQuest.rewarded) {
+        this.state.dailyQuest.current = Math.min(this.state.dailyQuest.required, this.state.dailyQuest.current + count);
+      }
+    }
+    this.save();
+  }
+
+  claimDailyQuest(): boolean {
+    const q = this.state.dailyQuest;
+    if (q.current >= q.required && !q.rewarded) {
+      q.rewarded = true;
+      this.addCoins(1500);
+      return true;
+    }
+    return false;
   }
 
   private save(): void {
@@ -171,6 +229,7 @@ export class GarageManager {
     const upRam = this.state.upgrades.ramPower * 0.5;
     const upRes = this.state.upgrades.resistance * 0.5;
     const upRecharge = this.state.upgrades.rechargeRate * 0.25;
+    const upPower = (this.state.upgrades.powerupDuration || 0);
     return {
       ...base,
       ramPower: base.ramPower + upRam,
@@ -179,6 +238,7 @@ export class GarageManager {
       ramPowerBonus: upRam,
       resistBonus: upRes,
       rechargeBonus: upRecharge,
+      powerupBonus: upPower,
     };
   }
 }

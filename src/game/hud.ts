@@ -23,6 +23,12 @@ export interface HudState {
   isSurvival?: boolean;
   survivalElapsed?: number;
   survivalLimit?: number;
+  // power-ups
+  cayTimer: number;
+  simitTimer: number;
+  soganTimer: number;
+  kahveTimer: number;
+  kolonyaTimer: number;
 }
 
 const STATE_LABEL: Record<OfkeState, string> = {
@@ -204,6 +210,42 @@ export function drawHud(ctx: CanvasRenderingContext2D, vw: number, vh: number, s
     ctx.font = "900 16px -apple-system, system-ui, sans-serif";
     ctx.fillStyle = "#ff2d2d";
     ctx.fillText("∞", baseX + pipR, baseY + 5);
+  }
+
+  // --- Power-up göstergeleri (sol alt, hasar barınüstünde) ---
+  const puBaseY = hy - 44;
+  let puX = hx;
+  const puItems: { icon: string; timer: number; maxTime: number; color: string; bg: string }[] = [];
+  if (s.cayTimer > 0)     puItems.push({ icon: "🍵", timer: s.cayTimer,    maxTime: 8, color: "#e23a2a", bg: "rgba(200,30,30,0.25)" });
+  if (s.simitTimer > 0)   puItems.push({ icon: "🥯", timer: s.simitTimer,   maxTime: 6, color: "#d98e36", bg: "rgba(200,130,30,0.25)" });
+  if (s.soganTimer > 0)   puItems.push({ icon: "🧅", timer: s.soganTimer,   maxTime: 5, color: "#7ecb50", bg: "rgba(60,160,30,0.25)" });
+  if (s.kahveTimer > 0)   puItems.push({ icon: "☕", timer: s.kahveTimer,   maxTime: 5, color: "#a0622a", bg: "rgba(120,70,20,0.30)" });
+  if (s.kolonyaTimer > 0) puItems.push({ icon: "🍋", timer: s.kolonyaTimer, maxTime: 6, color: "#74d7f7", bg: "rgba(60,180,220,0.22)" });
+
+  for (const pu of puItems) {
+    const pw = 60, ph = 34, pr = 8;
+    // arka plan
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(puX, puBaseY, pw, ph, pr);
+    ctx.fillStyle = pu.bg;
+    ctx.fill();
+    ctx.strokeStyle = pu.color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // ilerleme çubuğu
+    const frac = Math.max(0, pu.timer / pu.maxTime);
+    ctx.beginPath();
+    ctx.roundRect(puX, puBaseY + ph - 5, pw * frac, 5, [0, 0, pr, pr]);
+    ctx.fillStyle = pu.color;
+    ctx.fill();
+    // ikon + süre
+    ctx.textAlign = "center";
+    ctx.font = "500 13px -apple-system, system-ui, sans-serif";
+    ctx.fillStyle = "#fff";
+    ctx.fillText(`${pu.icon} ${Math.ceil(pu.timer)}s`, puX + pw / 2, puBaseY + 21);
+    ctx.restore();
+    puX += pw + 8;
   }
 }
 

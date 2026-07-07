@@ -44,6 +44,14 @@
           <div class="menu-stats">
             <p>YÜKSEK SKOR</p>
             <span id="menu-highscore" class="text-gold">—</span>
+            <p>EN UZUN KOMBO</p>
+            <span id="menu-maxcombo" class="text-gold">—</span>
+          </div>
+          <div id="daily-quest-box" class="menu-stats" style="margin-top:10px; background:rgba(0,0,0,0.4); padding:10px; border-radius:8px;">
+            <p>GÜNLÜK GÖREV</p>
+            <span id="daily-quest-desc" class="text-red">—</span>
+            <span id="daily-quest-prog" class="text-gold" style="display:block;">0/5</span>
+            <button id="btn-claim-quest" class="btn-small" style="display:none; margin-top:5px; width:100%;">ÖDÜLÜ AL (+1500🪙)</button>
           </div>
           <div class="button-group">
             <button id="btn-play" class="btn-primary">KAMPANYA OYNA</button>
@@ -88,6 +96,10 @@
               <span>Şarj Hızı <span id="lvl-recharge">0/5</span></span>
               <button id="btn-up-recharge" class="btn-up">300🪙</button>
             </div>
+            <div class="upgrade-row">
+              <span>Power-up Süresi <span id="lvl-powerup">0/5</span></span>
+              <button id="btn-up-powerup" class="btn-up">300🪙</button>
+            </div>
           </div>
           <div id="panel-vehicles" class="panel scroll-list"></div>
         </div>
@@ -120,6 +132,12 @@
             <button id="btn-end-next" class="btn-primary" style="display: none">SONRAKİ BÖLÜM</button>
             <button id="btn-end-menu" class="btn-secondary">ANA MENÜ</button>
           </div>
+        </div>
+        </div>
+
+        <!-- OYUN İÇİ HUD (Sabit Butonlar) -->
+        <div id="ingame-hud" style="display: none; position: absolute; top: 15px; right: 15px; z-index: 50;">
+          <button id="btn-radio" class="btn-small" style="font-size: 12px; padding: 6px 10px; background: rgba(0,0,0,0.6); border: 1px solid #ffcc00; color: #ffcc00;">📻 ARABESK</button>
         </div>
       </div>
     </div>

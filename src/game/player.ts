@@ -38,6 +38,20 @@ export class Player {
   ramFlash = 0;
   shieldTimer = 0;
 
+  /** Tavşan Kanı Çay: RAM bekleme süresi sıfır, maks 8 saniye */
+  cayTimer = 0;
+  /** Simit Kuvveti: polis araçlarını da ezebilme, maks 6 saniye */
+  simitkuvveti = 0;
+  /** Soğan: 5sn boyunca yakındaki araçlar yavaşlar */
+  soganlama = 0;
+  /** Türk Kahvesi: 5sn boyunca RAM %50 daha hızlı ve güçlü */
+  kahveTimer = 0;
+  /** Limon Kolonyası: 6sn boyunca araçlar çarpınca sektirip uzaklaşır, hasar yok */
+  kolonyaTimer = 0;
+
+  /** Yağmurda yol kaygan — game tarafından ayarlanır (0.52 yağmur, 1 normal). */
+  frictionMult = 1;
+
   /** 0..1 — ne kadar drift yapıyor (parçacık ve ses için) */
   driftIntensity = 0;
   /** -1..1 — görsel yatma açısı (sola/sağa) */
@@ -61,7 +75,8 @@ export class Player {
   }
 
   ram(dir: Vec2): void {
-    const speed = BASE_RAM_SPEED * this.ramSpeedMult;
+    const kahveBoost = this.kahveTimer > 0 ? 1.5 : 1;
+    const speed = BASE_RAM_SPEED * this.ramSpeedMult * kahveBoost;
     this.vx = dir.x * speed;
     this.vy = dir.y * speed;
     this.ramming = true;
@@ -80,6 +95,11 @@ export class Player {
 
   update(dt: number): void {
     if (this.shieldTimer > 0) this.shieldTimer -= dt;
+    if (this.cayTimer > 0) this.cayTimer -= dt;
+    if (this.simitkuvveti > 0) this.simitkuvveti -= dt;
+    if (this.soganlama > 0) this.soganlama -= dt;
+    if (this.kahveTimer > 0) this.kahveTimer -= dt;
+    if (this.kolonyaTimer > 0) this.kolonyaTimer -= dt;
 
     if (this.ramTimer > 0) {
       this.ramTimer -= dt;
@@ -90,7 +110,7 @@ export class Player {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
-    const f = 1 - Math.min(1, FRICTION * dt);
+    const f = 1 - Math.min(1, FRICTION * this.frictionMult * dt);
     this.vx *= f;
     this.vy *= f;
     if (Math.abs(this.vx) < 2) this.vx = 0;

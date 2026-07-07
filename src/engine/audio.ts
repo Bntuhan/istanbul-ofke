@@ -7,9 +7,11 @@ import type { TargetId } from "../game/targets";
  *
  * Phrygian-dominant scale (Hicaz feel) drives the bass/melody.
  */
-const SCALE = [0, 1, 4, 5, 7, 8, 10]; // semitones from root
+const SCALE_ARABESK = [0, 1, 4, 5, 7, 8, 10]; // semitones from root
+const SCALE_NOSTALJI = [0, 2, 3, 5, 7, 8, 10]; // minor scale
 
 export class AudioEngine {
+  public radioChannel: "arabesk" | "nostalji" | "haber" = "arabesk";
   private ctx: AudioContext | null = null;
   private master!: GainNode;
   private musicGain!: GainNode;
@@ -82,11 +84,13 @@ export class AudioEngine {
     const loop = (): void => {
       if (!this.ctx) return;
       // fade music in once running
-      const targetVol = 0.5 + this.intensity * 0.5;
+      const isHaber = this.radioChannel === "haber";
+      const targetVol = isHaber ? 0 : (0.5 + this.intensity * 0.5);
       this.musicGain.gain.setTargetAtTime(this.muted ? 0 : targetVol, this.ctx.currentTime, 0.3);
       while (this.nextNoteTime < this.ctx.currentTime + 0.12) {
         this.scheduleStep(this.step, this.nextNoteTime);
-        const bpm = 82 + this.intensity * 46 + (this.fullOfke ? 14 : 0);
+        let bpm = 82 + this.intensity * 46 + (this.fullOfke ? 14 : 0);
+        if (this.radioChannel === "nostalji") bpm *= 0.8; // slower
         const sixteenth = 60 / bpm / 4;
         this.nextNoteTime += sixteenth;
         this.step = (this.step + 1) % 16;
@@ -97,6 +101,8 @@ export class AudioEngine {
   }
 
   private scheduleStep(step: number, t: number): void {
+    if (this.radioChannel === "haber") return; // No music
+    const scale = this.radioChannel === "nostalji" ? SCALE_NOSTALJI : SCALE_ARABESK;
     const lvl = this.fullOfke ? 1 : this.intensity;
     // kick on quarter notes once we're past "Sıkıntı"
     if (lvl >= 0.3 && step % 4 === 0) this.kick(t, 0.9);
@@ -109,7 +115,7 @@ export class AudioEngine {
     // bassline
     if (lvl >= 0.3 && (step === 0 || step === 6 || step === 8 || step === 14)) {
       const deg = [0, 3, 0, 4][[0, 6, 8, 14].indexOf(step)] ?? 0;
-      this.bass(this.freq(SCALE[deg % SCALE.length], 1), t);
+      this.bass(this.freq(scale[deg % scale.length], 1), t);
     }
 
     // melody riff in higher states (skipped in the bass-only "Kaynıyor" band, like the GDD)
@@ -117,7 +123,7 @@ export class AudioEngine {
     if (!kayniyor && lvl >= 0.6) {
       const riff = [0, 2, 1, 3, 2, 4, 3, 5];
       if (step % 2 === 0) {
-        const d = SCALE[riff[(step / 2) % riff.length] % SCALE.length];
+        const d = scale[riff[(step / 2) % riff.length] % scale.length];
         this.lead(this.freq(d, 3), t, this.fullOfke ? 0.22 : 0.13);
       }
     }
@@ -210,6 +216,44 @@ export class AudioEngine {
       case "cift_park":
         this.crunch(t + 0.02, 0.4);
         break;
+      case "minibus":
+        this.crunch(t + 0.03, 0.55);
+        this.beep(t + 0.08, 180, 0.12);
+        break;
+      case "ambulans":
+        this.beep(t, 660, 0.06);
+        this.beep(t + 0.08, 880, 0.06);
+        break;
+      case "scooter":
+        this.screech(t, 800, 400);
+        break;
+      case "boss":
+        this.crunch(t + 0.04, 0.65);
+        break;
+    }
+  }
+
+  /** Yakınlık kornası / sireni — trafik çığlıkları */
+  playHorn(kind: "siren" | "dolmus" | "beep" | "cakarli"): void {
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime;
+    switch (kind) {
+      case "siren":
+        this.beep(t, 720, 0.07);
+        this.beep(t + 0.1, 960, 0.07);
+        break;
+      case "dolmus":
+        this.beep(t, 280, 0.18);
+        this.beep(t + 0.22, 320, 0.14);
+        break;
+      case "cakarli":
+        this.beep(t, 880, 0.05);
+        this.beep(t + 0.07, 1320, 0.05);
+        this.beep(t + 0.14, 880, 0.05);
+        break;
+      case "beep":
+        this.beep(t, 440, 0.08);
+        break;
     }
   }
 
@@ -231,9 +275,10 @@ export class AudioEngine {
 
   sting(up: boolean): void {
     if (!this.ctx || this.muted) return;
+    const scale = this.radioChannel === "nostalji" ? SCALE_NOSTALJI : SCALE_ARABESK;
     const t = this.ctx.currentTime;
     const notes = up ? [0, 4, 7, 12] : [12, 7, 4, 0];
-    notes.forEach((n, i) => this.lead(this.freq(SCALE[n % SCALE.length] + (n >= 12 ? 12 : 0), 3), t + i * 0.12, 0.5));
+    notes.forEach((n, i) => this.lead(this.freq(scale[n % scale.length] + (n >= 12 ? 12 : 0), 3), t + i * 0.12, 0.5));
   }
 
   /** Radio announcement on level start — speech if available, else a tuning sting. */

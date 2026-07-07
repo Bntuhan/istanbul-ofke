@@ -40,12 +40,16 @@ export class UIManager {
     document.getElementById("btn-mahkeme")!.onclick = () => this.show("mahkeme-screen");
 
     document.querySelectorAll(".btn-back").forEach((btn) => {
-      btn.addEventListener("click", () => this.show("main-menu"));
+      btn.addEventListener("click", () => {
+        this.show("main-menu");
+        document.getElementById("ingame-hud")!.style.display = "none";
+      });
     });
 
     document.getElementById("btn-end-menu")!.onclick = () => {
       this.game.returnToMenu();
       this.show("main-menu");
+      document.getElementById("ingame-hud")!.style.display = "none";
       this.refreshMainMenu();
     };
     document.getElementById("btn-end-retry")!.onclick = () => this.startLevel(this.activeLevelIndex);
@@ -71,6 +75,21 @@ export class UIManager {
       if (!seed) return;
       this.startSeedRun(seed, diff);
     };
+
+    document.getElementById("btn-claim-quest")!.onclick = () => {
+      if (this.garage.claimDailyQuest()) {
+        this.refreshMainMenu();
+      }
+    };
+
+    const channels = ["arabesk", "nostalji", "haber"] as const;
+    let currentChannelIdx = 0;
+    document.getElementById("btn-radio")!.onclick = () => {
+      currentChannelIdx = (currentChannelIdx + 1) % channels.length;
+      const ch = channels[currentChannelIdx];
+      this.game.setRadio(ch);
+      document.getElementById("btn-radio")!.textContent = `📻 ${ch.toUpperCase()}`;
+    };
   }
 
   private show(id: ScreenId): void {
@@ -80,8 +99,30 @@ export class UIManager {
 
   private refreshMainMenu(): void {
     const hs = this.garage.state.highScore;
-    document.getElementById("menu-highscore")!.textContent =
-      hs > 0 ? hs.toLocaleString("tr-TR") : "—";
+    document.getElementById("menu-highscore")!.textContent = hs > 0 ? hs.toLocaleString("tr-TR") : "—";
+    
+    const maxCombo = this.garage.state.stats?.maxCombo || 0;
+    document.getElementById("menu-maxcombo")!.textContent = maxCombo > 0 ? `x${maxCombo}` : "—";
+
+    const q = this.garage.state.dailyQuest;
+    const TARGET_NAMES: Record<string, string> = {
+      phantom: "Hayalet", cakarli: "Çakarlı", dolmus: "Dolmuş", cift_park: "Çift Park", simit: "Simitçi",
+      yaya: "Yaya", cicekci: "Çiçekçi", dilenci: "Dilenci", taksi: "Taksi", makasci: "Makasçı",
+      boss: "İETT", minibus: "Minibüs", ambulans: "Ambulans", scooter: "Scooter"
+    };
+    if (q) {
+      document.getElementById("daily-quest-desc")!.textContent = `${q.required} ${TARGET_NAMES[q.targetId] || q.targetId} Ez`;
+      document.getElementById("daily-quest-prog")!.textContent = `${q.current} / ${q.required}`;
+      const btn = document.getElementById("btn-claim-quest")!;
+      if (q.rewarded) {
+        btn.style.display = "none";
+        document.getElementById("daily-quest-desc")!.textContent += " (TAMAMLANDI)";
+      } else if (q.current >= q.required) {
+        btn.style.display = "block";
+      } else {
+        btn.style.display = "none";
+      }
+    }
   }
 
   private renderLevelSelect(): void {
@@ -129,19 +170,23 @@ export class UIManager {
   private startLevel(index: number): void {
     this.activeLevelIndex = index;
     document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+    document.getElementById("ingame-hud")!.style.display = "block";
     this.game.beginLevel(index, this.garage.getCurrentVehicle());
   }
 
   private startSeedRun(seed: string, difficulty: number): void {
     this.activeLevelIndex = 0;
     document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+    document.getElementById("ingame-hud")!.style.display = "block";
     this.game.beginSeedRun(seed, difficulty, this.garage.getCurrentVehicle());
   }
 
   private handleRunEnd(result: RunResult): void {
+    this.garage.updateStats(result.maxCombo, result.targetKills);
     const coins = Math.floor(result.score / 25) + result.kills * 8;
     this.garage.addCoins(coins);
     this.garage.updateHighScore(result.score);
+    document.getElementById("ingame-hud")!.style.display = "none";
     if (result.won) {
       const nextId = result.levelId + 1;
       if (LEVELS.some((l) => l.id === nextId)) this.garage.unlockLevel(nextId);
@@ -183,6 +228,7 @@ export class UIManager {
     this.bindUpgrade("ram", "ramPower");
     this.bindUpgrade("resist", "resistance");
     this.bindUpgrade("recharge", "rechargeRate");
+    this.bindUpgrade("powerup", "powerupDuration");
 
     this.drawGaragePreview(v);
   }

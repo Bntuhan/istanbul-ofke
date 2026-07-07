@@ -19,11 +19,12 @@ export interface RunResult {
   score: number;
   maxCombo: number;
   kills: number;
+  targetKills: Record<string, number>;
   levelId: number;
 }
 
 export interface Collectible {
-  type: "gold" | "cay" | "kriko" | "cukur";
+  type: "gold" | "cay" | "cay_powerup" | "simit_powerup" | "sogan" | "kahve" | "kolonya" | "kriko" | "cukur";
   x: number;
   y: number;
 }
@@ -31,6 +32,7 @@ export interface Collectible {
 type GameState = "intro" | "playing" | "won" | "lost";
 
 const CAR_GAP = 124; // bumper-to-bumper spacing in driving lanes
+const BLOCK_GAP = 240; // minibus/TIR needs more room
 const PARK_GAP = 150;
 const MAX_PARK_PER_SIDE = 5;
 const laneCenterX = (lane: number): number => -ROAD_HALF + LANE_W * 0.5 + lane * LANE_W;
@@ -85,9 +87,11 @@ export class Game {
     "Bugün öfke seviyesi ölçüm dışına çıktı. Cihaz bozuldu.",
   ];
   private radioQuipIndex = 0;
+  private hornTimer = 0;
 
   private score = 0;
   private hitStop = 0; // real seconds of freeze remaining
+  private runKills: Record<string, number> = {};
   private vw = 0;
   private vh = 0;
   private dpr = 1;
@@ -117,6 +121,10 @@ export class Game {
 
     this.resetRun();
     requestAnimationFrame((t) => this.frame(t));
+  }
+
+  public setRadio(channel: "arabesk" | "nostalji" | "haber"): void {
+    this.audio.radioChannel = channel;
   }
 
   // ------------------------------------------------------------- level flow
@@ -185,6 +193,7 @@ export class Game {
     this.trafficLightFrozen = false;
     this.collectibleTimer = 4;
     this.crosswalkTimer = 10;
+    this.runKills = {};
     this.wireEvents();
     this.fillTraffic(); // start already congested
   }
@@ -237,9 +246,9 @@ export class Game {
 
   // --------------------------------------------------------------- spawning
   /** Weighted pick among target ids matching a behavior filter. */
-  private pickType(park: boolean): TargetId {
+  private pickType(park: boolean, exclude: TargetId[] = []): TargetId {
     const list = this.level.spawnWeights.filter(
-      ([id]) => (TARGET_TYPES[id].behavior === "park") === park,
+      ([id]) => !exclude.includes(id) && (TARGET_TYPES[id].behavior === "park") === park,
     );
     if (list.length === 0) return park ? "simit" : "phantom";
     const total = list.reduce((a, [, w]) => a + w, 0);
@@ -249,6 +258,14 @@ export class Game {
       r -= w;
     }
     return list[0][0];
+  }
+
+  private laneHasBlocker(cx: number): boolean {
+    for (const t of this.targets) {
+      if (t.dead || !t.type.laneBlock) continue;
+      if (Math.abs(t.x - cx) < LANE_W * 0.55) return true;
+    }
+    return false;
   }
 
   /**
@@ -281,8 +298,15 @@ export class Game {
       }
       if (bestLane < 0 || bestTopY <= topBound) break; // every lane is full to the top
       const cx = laneCenterX(bestLane);
-      const y = bestTopY - (CAR_GAP + randRange(this.rng, 0, 40));
-      const type = TARGET_TYPES[this.pickType(false)];
+      let typeId = this.pickType(false);
+      if (TARGET_TYPES[typeId].laneBlock && this.laneHasBlocker(cx)) {
+        typeId = this.pickType(false, ["minibus"]);
+      }
+      const type = TARGET_TYPES[typeId];
+      const gap = type.laneBlock
+        ? BLOCK_GAP + randRange(this.rng, 0, 60)
+        : CAR_GAP + randRange(this.rng, 0, 40);
+      const y = bestTopY - gap;
       this.targets.push(new Target(type, cx, y, this.rng, this.level.speedMult));
     }
 
@@ -315,8 +339,18 @@ export class Game {
   private spawnPickups(dt: number) {
     this.collectibleTimer -= dt;
     if (this.collectibleTimer <= 0) {
-      this.collectibleTimer = 4.0;
-      const types: Collectible["type"][] = ["gold", "gold", "gold", "cay", "kriko", "cukur", "cukur"];
+      this.collectibleTimer = 3.0;
+      const types: Collectible["type"][] = [
+        "gold", "gold", "gold",
+        "cay",
+        "cay_powerup", "cay_powerup", "cay_powerup",
+        "simit_powerup", "simit_powerup",
+        "sogan", "sogan",
+        "kahve", "kahve",
+        "kolonya",
+        "kriko",
+        "cukur", "cukur"
+      ];
       const lane = [-LANE_W, 0, LANE_W][Math.floor(this.rng() * 3)];
       this.collectibles.push({
         type: types[Math.floor(this.rng() * types.length)],
@@ -355,7 +389,9 @@ export class Game {
       for (let i = 1; i < cars.length; i++) {
         const car = cars[i];
         const ahead = cars[i - 1];
-        const minGap = (car.type.h + ahead.type.h) * 0.5 + 8;
+        const minGap = car.type.laneBlock || ahead.type.laneBlock
+          ? (car.type.h + ahead.type.h) * 0.5 + 52
+          : (car.type.h + ahead.type.h) * 0.5 + 8;
         const gap = ahead.y - car.y;
         if (gap < minGap) {
           car.y = ahead.y - minGap; // resolve overlap
@@ -413,12 +449,19 @@ export class Game {
     }
 
     this.player.update(dt);
+    this.applyProximityEffects();
     this.ofke.update(dt);
     this.combo.update(dt);
     this.ram.update(dt);
     this.lvl.update(dt);
+
+    // Tavşan Kanı Çay: timer bitince unlimited RAM'i kapat (fullOfke yoksa)
+    if (this.player.cayTimer <= 0 && this.ram.unlimited && !this.ofke.fullOfke) {
+      this.ram.unlimited = false;
+    }
     this.audio.setOfke(this.ofke.current, this.ofke.state, this.ofke.fullOfke);
     this.audio.updateDrift(this.player.driftIntensity);
+    this.updateProximityHorns(realDt);
     this.clampToRoad();
 
     // Periyodik radyo anonsları
@@ -427,7 +470,8 @@ export class Game {
       const quips = Game.RADIO_QUIPS;
       this.audio.radioQuip(quips[this.radioQuipIndex % quips.length]);
       this.radioQuipIndex++;
-      this.radioQuipTimer = 30 + this.rng() * 30;
+      const baseDelay = this.audio.radioChannel === "haber" ? 8 : 30;
+      this.radioQuipTimer = baseDelay + this.rng() * (baseDelay * 0.5);
     }
 
     // Drift dumanı
@@ -446,9 +490,18 @@ export class Game {
 
     this.spawnPickups(dt);
 
-    // Kırmızı ışıkta NPC'ler durur, yeşilde patlıyor gibi hücum eder
+    // Kırmızı ışıkta NPC'ler durur, yeşilde patlama gibi hücum eder
+    // Soğan aktifse yakındaki araçlar yavaşlar
     const targetDt = this.trafficLightFrozen ? 0 : dt;
-    for (const target of this.targets) target.update(targetDt, this.rng);
+    const SOGAN_RADIUS = 220;
+    for (const target of this.targets) {
+      let effectiveDt = targetDt;
+      if (this.player.soganlama > 0 && !target.dead) {
+        const dist = Math.hypot(target.x - this.player.x, target.y - this.player.y);
+        if (dist < SOGAN_RADIUS) effectiveDt *= 0.2; // %20 hızda
+      }
+      target.update(effectiveDt, this.rng);
+    }
     this.applyTrafficFlow();
     this.handleCollisions();
 
@@ -466,9 +519,46 @@ export class Game {
           this.ofke.add(40);
           this.player.hasar = Math.min(100, this.player.hasar + 25);
           this.floats.spawn(col.x, col.y, "TAVŞAN KANI!", "#e23a2a", 18);
+        } else if (col.type === "cay_powerup") {
+          const bonus = 1 + (this.activeVehicle?.powerupBonus || 0) * 0.25;
+          this.player.cayTimer = 8.0 * bonus;
+          this.ram.unlimited = true;
+          this.flashWhite = 0.5;
+          this.camera.addTrauma(0.4);
+          haptic([30, 20, 60]);
+          this.floats.spawn(col.x, col.y, `🍵 TAVŞAN KANI ÇAY! ${(8.0*bonus).toFixed(1)}sn`, "#e23a2a", 22);
+        } else if (col.type === "simit_powerup") {
+          const bonus = 1 + (this.activeVehicle?.powerupBonus || 0) * 0.25;
+          this.player.simitkuvveti = 6.0 * bonus;
+          this.flashWhite = 0.4;
+          this.camera.addTrauma(0.35);
+          haptic([20, 15, 40]);
+          this.floats.spawn(col.x, col.y, `🥯 SİMİT KUVVETİ! ${(6.0*bonus).toFixed(1)}sn`, "#d98e36", 22);
+        } else if (col.type === "sogan") {
+          const bonus = 1 + (this.activeVehicle?.powerupBonus || 0) * 0.25;
+          this.player.soganlama = 5.0 * bonus;
+          this.flashWhite = 0.3;
+          this.camera.addTrauma(0.25);
+          haptic([15, 10, 30]);
+          this.floats.spawn(col.x, col.y, `🧅 SOĞAN KUVVETİ! ${(5.0*bonus).toFixed(1)}sn`, "#7ecb50", 22);
+        } else if (col.type === "kahve") {
+          const bonus = 1 + (this.activeVehicle?.powerupBonus || 0) * 0.25;
+          this.player.kahveTimer = 5.0 * bonus;
+          this.flashWhite = 0.4;
+          this.camera.addTrauma(0.3);
+          haptic([20, 10, 50]);
+          this.floats.spawn(col.x, col.y, `☕ TÜRK KAHVESİ! ${(5.0*bonus).toFixed(1)}sn`, "#a0622a", 22);
+        } else if (col.type === "kolonya") {
+          const bonus = 1 + (this.activeVehicle?.powerupBonus || 0) * 0.25;
+          this.player.kolonyaTimer = 6.0 * bonus;
+          this.flashWhite = 0.35;
+          this.camera.addTrauma(0.25);
+          haptic([10, 20, 10, 20, 40]);
+          this.floats.spawn(col.x, col.y, `🍋 LİMON KOLONYA! ${(6.0*bonus).toFixed(1)}sn`, "#74d7f7", 22);
         } else if (col.type === "kriko") {
-          this.player.shieldTimer = 5.0;
-          this.floats.spawn(col.x, col.y, "KRİKO ZIRHI!", "#fff", 18);
+          const bonus = 1 + (this.activeVehicle?.powerupBonus || 0) * 0.25;
+          this.player.shieldTimer = 5.0 * bonus;
+          this.floats.spawn(col.x, col.y, `KRİKO ZIRHI! ${(5.0*bonus).toFixed(1)}sn`, "#fff", 18);
         } else if (col.type === "cukur") {
           this.player.takeDamage(15, false);
           this.camera.addTrauma(0.35);
@@ -497,6 +587,7 @@ export class Game {
         score: this.score,
         maxCombo: this.combo.count,
         kills: this.lvl.destroyed,
+        targetKills: this.runKills,
         levelId: this.level.id
       });
     } else if (this.lvl.checkWin(this.score)) {
@@ -511,8 +602,46 @@ export class Game {
         score: this.score,
         maxCombo: this.combo.count,
         kills: this.lvl.destroyed,
+        targetKills: this.runKills,
         levelId: this.level.id
       });
+    }
+  }
+
+  private applyProximityEffects(): void {
+    let speedCap = 1;
+    const zoneRadius = 200;
+    for (const t of this.targets) {
+      if (t.dead || t.type.proximitySlow == null) continue;
+      const dist = Math.hypot(t.x - this.player.x, t.y - this.player.y);
+      if (dist >= zoneRadius) continue;
+      const edge = t.type.proximitySlow + (1 - t.type.proximitySlow) * (dist / zoneRadius);
+      speedCap = Math.min(speedCap, edge);
+    }
+    if (speedCap >= 1) return;
+    const maxV = 340 * speedCap;
+    const sp = Math.hypot(this.player.vx, this.player.vy);
+    if (sp > maxV) {
+      this.player.vx *= maxV / sp;
+      this.player.vy *= maxV / sp;
+    }
+  }
+
+  private updateProximityHorns(realDt: number): void {
+    this.hornTimer -= realDt;
+    if (this.hornTimer > 0) return;
+    const hornRadius = 340;
+    for (const t of this.targets) {
+      if (t.dead) continue;
+      const dist = Math.hypot(t.x - this.player.x, t.y - this.player.y);
+      if (dist > hornRadius) continue;
+      let kind = t.type.horn;
+      if (!kind && t.type.id === "dolmus") kind = "dolmus";
+      if (!kind && t.type.id === "cakarli") kind = "cakarli";
+      if (!kind) continue;
+      this.audio.playHorn(kind);
+      this.hornTimer = 2.2 + this.rng() * 2.5;
+      return;
     }
   }
 
@@ -542,11 +671,31 @@ export class Game {
       const minDist = p.radius + target.radius;
       if (dist > minDist) continue;
 
-      if (p.ramming) {
-        this.smash(target, p.vx, p.vy);
+      const nx = dist > 0.01 ? dx / dist : 0;
+      const ny = dist > 0.01 ? dy / dist : 1;
+
+      // Simit Kuvveti: çakarlı/polis araçlarına da ram yapılabilir
+      const isPolisAraci = target.type.id === "cakarli";
+      const canSmash = p.ramming && (p.simitkuvveti > 0 || !isPolisAraci || this.ofke.fullOfke);
+
+      if (canSmash) {
+        this.smash(target, p.vx, p.vy, isPolisAraci && p.simitkuvveti > 0);
+      } else if (p.kolonyaTimer > 0) {
+        // Limon Kolonyası: araç çarpınca güçlücé sektirilir, oyuncuya hasar yok
+        target.vx += nx * 380;
+        target.vy += ny * 380;
+        p.vx -= nx * 60;
+        p.vy -= ny * 60;
+        this.camera.addTrauma(0.2);
+        haptic(8);
+        this.particles.burst({
+          x: target.x, y: target.y,
+          count: 8,
+          colors: ["#74d7f7", "#c4f0ff", "#ffffff"],
+          speed: 180, size: 8, shape: "ring", spread: Math.PI,
+        });
+        this.floats.spawn(target.x, target.y - 30, "KOLONYA!", "#74d7f7", 16);
       } else {
-        const nx = dist > 0.01 ? dx / dist : 0;
-        const ny = dist > 0.01 ? dy / dist : 1;
         const push = (minDist - dist) * 0.5;
         target.x += nx * push;
         target.y += ny * push;
@@ -558,7 +707,7 @@ export class Game {
     }
   }
 
-  private smash(target: Target, pvx: number, pvy: number): void {
+  private smash(target: Target, pvx: number, pvy: number, noDamageToPlayer = false): void {
     const speed = Math.hypot(pvx, pvy) || 1;
     const dirX = pvx / speed;
     const dirY = pvy / speed;
@@ -586,14 +735,26 @@ export class Game {
     this.ofke.add(target.type.ofkeFill);
     this.combo.registerHit();
     this.lvl.registerKill(target.type.id);
+    this.runKills[target.type.id] = (this.runKills[target.type.id] || 0) + 1;
     const mult = this.combo.multiplier * this.ofke.scoreMultiplier;
     const points = Math.round(target.type.score * mult);
     this.score += points;
-    this.player.takeDamage(target.type.selfDamage, this.ofke.fullOfke);
+
+    if (target.type.id === "ambulans") {
+      this.combo.reset();
+      this.floats.spawn(target.x, target.y - 72, "AHLAK CEZASI!", "#ff2244", 22);
+    }
+
+    // Simit kuvveti aktifken polis aracı hasarı gelmiyor
+    if (!noDamageToPlayer) {
+      this.player.takeDamage(target.type.selfDamage, this.ofke.fullOfke);
+    }
 
     const col =
       this.ofke.fullOfke ? "#ff2d2d" : mult >= 3 ? "#ffd23a" : mult >= 2 ? "#ff8a3a" : "#ffffff";
-    this.floats.spawn(target.x, target.y - 20, `+${points}`, col, 24);
+    const scoreCol = points >= 0 ? col : "#ff2244";
+    const scoreLabel = points >= 0 ? `+${points}` : `${points}`;
+    this.floats.spawn(target.x, target.y - 20, scoreLabel, scoreCol, 24);
     this.floats.spawn(target.x, target.y - 48, target.type.shout, "#e8e2d8", 15);
   }
 
@@ -617,13 +778,44 @@ export class Game {
 
     // Draw collectibles
     for (const c of this.collectibles) {
+      const isPowerup = c.type === "cay_powerup" || c.type === "simit_powerup";
+      const radius = isPowerup ? 18 : 14;
+      const pulse = isPowerup ? 1 + 0.12 * Math.sin(performance.now() / 200) : 1;
+
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.scale(pulse, pulse);
+
+      // Arka daire
       ctx.beginPath();
-      ctx.arc(c.x, c.y, 14, 0, Math.PI * 2);
-      ctx.fillStyle = c.type === "gold" ? "#FFD700" : c.type === "cay" ? "#c92a2a" : c.type === "kriko" ? "#aaaaaa" : "#333333";
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      if (c.type === "gold") ctx.fillStyle = "#FFD700";
+      else if (c.type === "cay") ctx.fillStyle = "#c92a2a";
+      else if (c.type === "cay_powerup") ctx.fillStyle = "rgba(180,20,20,0.85)";
+      else if (c.type === "simit_powerup") ctx.fillStyle = "rgba(160,90,20,0.85)";
+      else if (c.type === "kriko") ctx.fillStyle = "#aaaaaa";
+      else ctx.fillStyle = "#333333";
       ctx.fill();
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 2;
+
+      // Kenarlık (powerup'lara daha parlak)
+      ctx.strokeStyle = isPowerup ? "#fff" : "rgba(255,255,255,0.7)";
+      ctx.lineWidth = isPowerup ? 2.5 : 2;
       ctx.stroke();
+
+      // Powerup'lara emoji
+      if (c.type === "cay_powerup") {
+        ctx.font = `${radius}px serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("🍵", 0, 1);
+      } else if (c.type === "simit_powerup") {
+        ctx.font = `${radius}px serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("🥯", 0, 1);
+      }
+
+      ctx.restore();
     }
 
     for (const t of this.targets) drawTarget(ctx, t);
@@ -676,6 +868,11 @@ export class Game {
       isSurvival,
       survivalElapsed: isSurvival ? this.lvl.elapsed : undefined,
       survivalLimit: isSurvival ? this.level.timeLimit : undefined,
+      cayTimer: Math.max(0, this.player.cayTimer),
+      simitTimer: Math.max(0, this.player.simitkuvveti),
+      soganTimer: Math.max(0, this.player.soganlama),
+      kahveTimer: Math.max(0, this.player.kahveTimer),
+      kolonyaTimer: Math.max(0, this.player.kolonyaTimer),
     };
   }
 

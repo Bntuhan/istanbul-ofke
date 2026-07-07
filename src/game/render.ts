@@ -25,25 +25,27 @@ export function drawRoad(
   camY: number,
   vw: number,
   vh: number,
+  palette?: { shoulder: string; asphalt: string; curb: string; line: string },
 ): void {
   const top = camY - vh;
   const bottom = camY + vh;
+  const p = palette ?? { shoulder: "#16161a", asphalt: "#26262b", curb: "#3a3a42", line: "rgba(230,220,140,0.55)" };
 
   // off-road shoulders
-  ctx.fillStyle = "#16161a";
+  ctx.fillStyle = p.shoulder;
   ctx.fillRect(camX - vw, top, vw * 2, vh * 2);
 
   // asphalt
-  ctx.fillStyle = "#26262b";
+  ctx.fillStyle = p.asphalt;
   ctx.fillRect(-ROAD_HALF, top, ROAD_HALF * 2, vh * 2);
 
   // curbs
-  ctx.fillStyle = "#3a3a42";
+  ctx.fillStyle = p.curb;
   ctx.fillRect(-ROAD_HALF - 10, top, 10, vh * 2);
   ctx.fillRect(ROAD_HALF, top, 10, vh * 2);
 
   // dashed lane lines
-  ctx.strokeStyle = "rgba(230,220,140,0.55)";
+  ctx.strokeStyle = p.line;
   ctx.lineWidth = 5;
   ctx.setLineDash([34, 30]);
   const startY = Math.floor(top / 64) * 64;
@@ -116,6 +118,78 @@ export function drawTarget(ctx: CanvasRenderingContext2D, t: Target): void {
       ctx.beginPath();
       ctx.arc(i * 16, -2, 10, 0, Math.PI * 2);
       ctx.stroke();
+    }
+  } else if (t.type.id === "scooter") {
+    // moto kurye — ince gövde + kurye noktası
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    roundRect(ctx, -w / 2 + 2, -h / 2 + 4, w, h, 5);
+    ctx.fill();
+    ctx.fillStyle = t.type.body;
+    roundRect(ctx, -w / 2, -h / 2 + h * 0.35, w, h * 0.55, 4);
+    ctx.fill();
+    ctx.fillStyle = t.type.accent;
+    roundRect(ctx, -w / 2 + 2, -h / 2 + 2, w - 4, h * 0.28, 3);
+    ctx.fill();
+    // kurye kaskı
+    ctx.fillStyle = "#ffcc00";
+    ctx.beginPath();
+    ctx.arc(0, -h / 2 + h * 0.18, w * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    // tekerlekler
+    ctx.fillStyle = "#111";
+    ctx.fillRect(-w / 2 + 1, h / 2 - 6, 5, 5);
+    ctx.fillRect(w / 2 - 6, h / 2 - 6, 5, 5);
+    if (t.flash > 0) {
+      ctx.globalAlpha = t.flash;
+      ctx.fillStyle = "#ffffff";
+      roundRect(ctx, -w / 2, -h / 2, w, h, 4);
+      ctx.fill();
+      ctx.globalAlpha = t.alpha;
+    }
+  } else if (t.type.id === "minibus") {
+    // TIR — uzun kasa, şeridi kaplar
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    roundRect(ctx, -w / 2 + 5, -h / 2 + 8, w, h, 10);
+    ctx.fill();
+    drawCarBody(ctx, w, h, t.type.body, t.type.accent, t.flash);
+    // kasa çizgileri
+    ctx.strokeStyle = "rgba(200,200,210,0.35)";
+    ctx.lineWidth = 2;
+    for (let i = 1; i <= 3; i++) {
+      const ly = -h / 2 + (h / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(-w / 2 + 6, ly);
+      ctx.lineTo(w / 2 - 6, ly);
+      ctx.stroke();
+    }
+    // TIR yazısı
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = "bold 11px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("TIR", 0, h * 0.15);
+  } else if (t.type.id === "ambulans") {
+    drawCarBody(ctx, w, h, t.type.body, t.type.accent, t.flash);
+    // kırmızı haç
+    ctx.fillStyle = "#cc1111";
+    ctx.fillRect(-5, -h * 0.08, 10, h * 0.22);
+    ctx.fillRect(-h * 0.06, -3, h * 0.12, 6);
+    // yanıp sönen sireni
+    if (!t.dead) {
+      const on = Math.floor(performance.now() / 140) % 2 === 0;
+      ctx.fillStyle = on ? "#ff2222" : "#4488ff";
+      roundRect(ctx, -w / 2 + 8, -h / 2 + 2, w - 16, 9, 3);
+      ctx.fill();
+    }
+    // e-zone uyarı halkası (oyuncu yakındaysa)
+    if (!t.dead) {
+      ctx.strokeStyle = "rgba(255,50,50,0.18)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 105, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
   } else {
     drawCarBody(ctx, w, h, t.type.body, t.type.accent, t.flash);

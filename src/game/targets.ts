@@ -11,7 +11,27 @@ export type TargetId =
   | "dilenci"
   | "taksi"
   | "makasci"
-  | "boss";
+  | "boss"
+  | "minibus"
+  | "ambulans"
+  | "scooter";
+
+export const GOAL_LABELS: Record<TargetId, string> = {
+  phantom: "HAYALET FRENCİ",
+  cakarli: "ÇAKARLI",
+  dolmus: "DOLMUŞ",
+  cift_park: "ÇİFT PARK",
+  simit: "SİMİTÇİ",
+  yaya: "YAYA",
+  cicekci: "ÇİÇEKÇİ",
+  dilenci: "DİLENCİ",
+  taksi: "TAKSİ",
+  makasci: "MAKASÇI",
+  boss: "İETT OTOBÜS",
+  minibus: "MİNİBÜS/TIR",
+  ambulans: "AMBULANS",
+  scooter: "MOTO KURYE",
+};
 
 /** Per-target destruction animation (brief §2.2). */
 export type DeathStyle =
@@ -39,9 +59,15 @@ export interface TargetType {
   debris: string[];
   debrisShape: "rect" | "ring";
   death: DeathStyle;
-  /** "drive" flows down the road; "park" is stationary at the roadside; "stutter" brakes; "wander" drifts; "makas" zig-zags; "horiz" walks horizontally. */
-  behavior: "stutter" | "drive" | "park" | "wander" | "makas" | "horiz" | "boss";
+  /** "drive" flows down the road; "park" is stationary at the roadside; "stutter" brakes; "wander" drifts; "makas" zig-zags; "horiz" walks horizontally; "block" fills the lane. */
+  behavior: "stutter" | "drive" | "park" | "wander" | "makas" | "horiz" | "boss" | "block";
   baseSpeed: number; // px/s downward drift
+  /** Fills the entire lane — only one per lane, larger follow gap. */
+  laneBlock?: boolean;
+  /** Player speed multiplier when within 200px (ambulans e-zone). */
+  proximitySlow?: number;
+  /** Periodic horn/siren when player is nearby. */
+  horn?: "siren" | "dolmus" | "beep" | "cakarli";
 }
 
 /** The destruction database (brief §2.2 / §2.3). Data-driven so new targets are trivial. */
@@ -54,8 +80,8 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     accent: "#2b2b30",
     w: 64,
     h: 108,
-    score: 250,
-    ofkeFill: 18,
+    score: 100,
+    ofkeFill: 8,
     selfDamage: 5,
     hits: 1,
     debris: ["#c9c4bb", "#8f8a82", "#e4e0d8", "#5a5650"],
@@ -72,8 +98,8 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     accent: "#3a6df0",
     w: 66,
     h: 114,
-    score: 340,
-    ofkeFill: 22,
+    score: 150,
+    ofkeFill: 10,
     selfDamage: 6,
     hits: 1,
     debris: ["#3a6df0", "#9ec0ff", "#1d1d22", "#ffd23a"],
@@ -81,6 +107,7 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     death: "tbone",
     behavior: "drive",
     baseSpeed: 96,
+    horn: "cakarli",
   },
   dolmus: {
     id: "dolmus",
@@ -90,8 +117,8 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     accent: "#f2c14e",
     w: 78,
     h: 150,
-    score: 290,
-    ofkeFill: 20,
+    score: 120,
+    ofkeFill: 8,
     selfDamage: 7,
     hits: 1,
     debris: ["#2e6b4f", "#f2c14e", "#9fd6b6", "#1c3f30"],
@@ -99,6 +126,7 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     death: "spin180",
     behavior: "wander",
     baseSpeed: 26,
+    horn: "dolmus",
   },
   cift_park: {
     id: "cift_park",
@@ -108,8 +136,8 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     accent: "#2b2b30",
     w: 66,
     h: 116,
-    score: 180,
-    ofkeFill: 12,
+    score: 80,
+    ofkeFill: 5,
     selfDamage: 5,
     hits: 1,
     debris: ["#a33636", "#e06666", "#2b2b30", "#ffae3a"],
@@ -126,8 +154,8 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     accent: "#d98e36",
     w: 70,
     h: 56,
-    score: 80,
-    ofkeFill: 5,
+    score: 30,
+    ofkeFill: 2,
     selfDamage: 2,
     hits: 1,
     debris: ["#d98e36", "#c9772a", "#f0c27a", "#8a5a2a"],
@@ -173,7 +201,7 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     body: "#e6b800",
     accent: "#000000",
     w: 64, h: 108,
-    score: 200, ofkeFill: 15, selfDamage: 5, hits: 1,
+    score: 100, ofkeFill: 6, selfDamage: 5, hits: 1,
     debris: ["#e6b800", "#000000", "#ffcc00"], debrisShape: "rect", death: "skid", behavior: "wander", baseSpeed: 50
   },
   makasci: {
@@ -183,7 +211,7 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     body: "#ff3300",
     accent: "#000000",
     w: 66, h: 110,
-    score: 300, ofkeFill: 25, selfDamage: 8, hits: 1,
+    score: 150, ofkeFill: 10, selfDamage: 8, hits: 1,
     debris: ["#ff3300", "#000000", "#ff6633"], debrisShape: "rect", death: "tbone", behavior: "makas", baseSpeed: 100
   },
   boss: {
@@ -193,8 +221,67 @@ export const TARGET_TYPES: Record<TargetId, TargetType> = {
     body: "#0066cc",
     accent: "#ffffff",
     w: 80, h: 160,
-    score: 1000, ofkeFill: 50, selfDamage: 15, hits: 3,
+    score: 500, ofkeFill: 20, selfDamage: 15, hits: 3,
     debris: ["#0066cc", "#ffffff", "#3399ff", "#000000"], debrisShape: "rect", death: "collapse", behavior: "boss", baseSpeed: 40
+  },
+  minibus: {
+    id: "minibus",
+    shout: "TİR SİLİNDİ!",
+    label: "Minibüs/TIR",
+    body: "#3a3a52",
+    accent: "#c0c0c8",
+    w: 100,
+    h: 210,
+    score: 300,
+    ofkeFill: 15,
+    selfDamage: 12,
+    hits: 3,
+    debris: ["#3a3a52", "#c0c0c8", "#888899", "#222230"],
+    debrisShape: "rect",
+    death: "collapse",
+    behavior: "block",
+    baseSpeed: 24,
+    laneBlock: true,
+    horn: "beep",
+  },
+  ambulans: {
+    id: "ambulans",
+    shout: "UTAN!",
+    label: "Ambulans",
+    body: "#f0f0f0",
+    accent: "#cc1111",
+    w: 68,
+    h: 130,
+    score: -150,
+    ofkeFill: -10,
+    selfDamage: 20,
+    hits: 1,
+    debris: ["#f0f0f0", "#cc1111", "#ffffff", "#ffaaaa"],
+    debrisShape: "rect",
+    death: "tbone",
+    behavior: "drive",
+    baseSpeed: 110,
+    proximitySlow: 0.38,
+    horn: "siren",
+  },
+  scooter: {
+    id: "scooter",
+    shout: "KURYE UÇTU!",
+    label: "Moto Kurye",
+    body: "#ff6600",
+    accent: "#222222",
+    w: 26,
+    h: 48,
+    score: 50,
+    ofkeFill: 4,
+    selfDamage: 2,
+    hits: 1,
+    debris: ["#ff6600", "#222222", "#ffaa55"],
+    debrisShape: "ring",
+    death: "skid",
+    behavior: "makas",
+    baseSpeed: 175,
+    horn: "beep",
   },
 };
 
@@ -331,12 +418,17 @@ export class Target {
         break;
       }
       case "makas": {
-        // sine wave weaving
         const tNow = performance.now();
-        this.vx = Math.sin(tNow / 300 + this.rngId * 100) * 200;
+        const weave = this.type.id === "scooter" ? 280 : 200;
+        const period = this.type.id === "scooter" ? 220 : 300;
+        this.vx = Math.sin(tNow / period + this.rngId * 100) * weave;
         this.vy = this.driveSpeed;
         break;
       }
+      case "block":
+        this.vx = 0;
+        this.vy = this.driveSpeed;
+        break;
       case "horiz": {
         // walks left or right
         if (this.vx === 0) {
